@@ -1,0 +1,272 @@
+openapi: 3.1.0
+info:
+  title: Takarda API
+  version: 1.0.0
+  description: Resource-oriented API contract for the Takarda Decide assignment.
+servers:
+  - url: https://api.takarda.example/v1
+    description: Illustrative API base; provider/domain is an explicit assumption.
+security: []
+paths:
+  /pin-orders:
+    post:
+      summary: Create a PIN purchase
+      operationId: createPinOrder
+      security: [{clientToken: []}]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/PinOrderRequest'
+      responses:
+        '201': {description: Purchase created}
+        '400': {description: Invalid request}
+        '401': {description: Unauthenticated}
+        '409': {description: Conflicting purchase identity}
+        '502': {description: Payment partner unavailable}
+  /pin-orders/{purchaseId}:
+    get:
+      summary: Get PIN purchase state
+      operationId: getPinOrder
+      security: [{clientToken: []}]
+      parameters:
+        - $ref: '#/components/parameters/PurchaseId'
+      responses:
+        '200':
+          description: Purchase state
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/PinOrder'}
+        '401': {description: Unauthenticated}
+        '404': {description: Purchase not found}
+  /sittings/{sittingId}/candidates/{examNumber}/result:
+    get:
+      summary: Get a candidate's current released result
+      operationId: getCandidateResult
+      security: [{candidateToken: []}]
+      parameters:
+        - $ref: '#/components/parameters/SittingId'
+        - $ref: '#/components/parameters/ExamNumber'
+      responses:
+        '200':
+          description: Current released result
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/CandidateResult'}
+        '400': {description: Invalid identifier}
+        '401': {description: Unauthenticated}
+        '404': {description: Not found}
+        '409': {description: Result not released}
+  /schools/{schoolId}/sittings/{sittingId}/results:
+    get:
+      summary: Get a school's results for a sitting
+      operationId: getSchoolResults
+      security: [{schoolToken: []}]
+      parameters:
+        - $ref: '#/components/parameters/SchoolId'
+        - $ref: '#/components/parameters/SittingId'
+        - name: cursor
+          in: query
+          required: false
+          schema: {type: string}
+        - name: size
+          in: query
+          required: false
+          schema: {type: integer, minimum: 1, maximum: 10000, default: 1000}
+      responses:
+        '200':
+          description: Paginated school result collection
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/SchoolResultPage'}
+        '400': {description: Invalid paging}
+        '401': {description: Unauthenticated}
+        '403': {description: School not authorized for requested schoolId}
+        '404': {description: Sitting or school not found}
+  /certificates/{certificateNumber}/verifications:
+    post:
+      summary: Verify a certificate
+      operationId: verifyCertificate
+      security: [{employerMtls: []}]
+      parameters:
+        - $ref: '#/components/parameters/CertificateNumber'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [dateOfBirth]
+              properties:
+                dateOfBirth:
+                  type: string
+                  format: date
+      responses:
+        '200':
+          description: Verification result
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/VerificationResult'}
+        '400': {description: Invalid request}
+        '401': {description: Unauthenticated}
+        '403': {description: Client not authorized}
+        '404': {description: Non-match or certificate not found}
+        '429': {description: Rate limited}
+        '502': {description: Upstream dependency unavailable}
+  /certificates/{certificateNumber}:
+    get:
+      summary: Get current certificate state
+      operationId: getCertificate
+      security: [{employerMtls: []}]
+      parameters:
+        - $ref: '#/components/parameters/CertificateNumber'
+      responses:
+        '200':
+          description: Current certificate state
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/Certificate'}
+        '401': {description: Unauthenticated}
+        '403': {description: Client not authorized}
+        '404': {description: Certificate not found}
+  /amendments:
+    post:
+      summary: Create an authorized result amendment
+      operationId: createAmendment
+      security: [{officerToken: []}]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/AmendmentRequest'
+      responses:
+        '201': {description: Amendment accepted}
+        '400': {description: Invalid or incomplete amendment}
+        '401': {description: Unauthenticated}
+        '403': {description: Officer not authorized}
+        '409': {description: Result version conflict}
+  /releases/{sittingId}:
+    get:
+      summary: Get sitting release state
+      operationId: getRelease
+      security: [{clientToken: []}]
+      parameters:
+        - $ref: '#/components/parameters/SittingId'
+      responses:
+        '200':
+          description: Release state
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/ReleaseState'}
+        '404': {description: Sitting not found}
+components:
+  securitySchemes:
+    clientToken:
+      type: http
+      scheme: bearer
+    candidateToken:
+      type: http
+      scheme: bearer
+    schoolToken:
+      type: http
+      scheme: bearer
+    employerMtls:
+      type: mutualTLS
+    officerToken:
+      type: http
+      scheme: bearer
+  parameters:
+    SittingId:
+      name: sittingId
+      in: path
+      required: true
+      schema: {type: string}
+    ExamNumber:
+      name: examNumber
+      in: path
+      required: true
+      schema: {type: string}
+    SchoolId:
+      name: schoolId
+      in: path
+      required: true
+      schema: {type: string}
+    CertificateNumber:
+      name: certificateNumber
+      in: path
+      required: true
+      schema: {type: string}
+    PurchaseId:
+      name: purchaseId
+      in: path
+      required: true
+      schema: {type: string}
+  schemas:
+    PinOrderRequest:
+      type: object
+      required: [clientPurchaseId, amountMinor, channel]
+      properties:
+        clientPurchaseId: {type: string, minLength: 1}
+        amountMinor: {type: integer, minimum: 0}
+        channel: {type: string}
+    PinOrder:
+      type: object
+      required: [purchaseId, clientPurchaseId, amountMinor, state]
+      properties:
+        purchaseId: {type: string}
+        clientPurchaseId: {type: string}
+        amountMinor: {type: integer}
+        state:
+          type: string
+          enum: [CREATED, CHARGING, PAID, UNKNOWN, REFUNDED, FAILED]
+    CandidateResult:
+      type: object
+      required: [sittingId, examNumber, results]
+      properties:
+        sittingId: {type: string}
+        examNumber: {type: string}
+        results:
+          type: array
+          items:
+            type: object
+            required: [subjectCode, grade]
+            properties:
+              subjectCode: {type: string}
+              grade: {type: string}
+    SchoolResultPage:
+      type: object
+      required: [items]
+      properties:
+        items:
+          type: array
+          items: {$ref: '#/components/schemas/CandidateResult'}
+        nextCursor: {type: string}
+    VerificationResult:
+      type: object
+      required: [matched, certificateNumber]
+      properties:
+        matched: {type: boolean}
+        certificateNumber: {type: string}
+        resultStatus: {type: string}
+    Certificate:
+      type: object
+      required: [certificateNumber, status]
+      properties:
+        certificateNumber: {type: string}
+        status: {type: string}
+    AmendmentRequest:
+      type: object
+      required: [resultId, evidenceRef, newResult, expectedVersion]
+      properties:
+        resultId: {type: string}
+        evidenceRef: {type: string}
+        newResult: {type: string}
+        expectedVersion: {type: string}
+    ReleaseState:
+      type: object
+      required: [sittingId, released]
+      properties:
+        sittingId: {type: string}
+        released: {type: boolean}
